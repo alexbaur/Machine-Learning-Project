@@ -1,0 +1,128 @@
+---
+title: "Machine Learning Project"
+author: "Alex Baur"
+date: "January 25, 2016"
+output: html_document
+---
+## Weight Lifting Exercise Dataset
+
+In this project we will be using the Weight Lifting Dataset from [Groupware](http://groupware.les.inf.puc-rio.br/har).
+
+The subjects were asked to lift the dumbbell in one of five ways: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+We are to clean the training data, create a predictive model, and apply the model to a test set, all given on coursera's website on the Machine Learning Assignment: Prediction Assignment Writeup page.
+
+## Data Importation and Cleaning
+First the data is brought into R Studio and the structure of the training set is examined.
+```{r, echo=TRUE}
+library(caret)
+## Read in data
+setwd("C:/Users/alexb/Desktop/Coursera/Machine Learning")
+trainset <- read.csv("pml-training.csv", na.strings=c('#DIV/0', '', 'NA') ,stringsAsFactors = F)
+testset <- read.csv("pml-testing.csv", na.strings=c('#DIV/0', '', 'NA') ,stringsAsFactors = F)
+str(trainset)
+```
+
+There are many columns that have little to no information in them. We need to identify them and remove them from the training set along with any other columns that do not aid our predictive models such as timestamps.
+```{r, echo=TRUE}
+## Find which columns are missing a lot of information and would be weak predictors
+nacount <-sapply(trainset, function(y) sum(length(which(is.na(y)))))
+nacount <- data.frame(nacount)
+nacount <- subset(nacount, nacount > 0)
+
+## Remove the columns from the train data set
+ridrow <- rownames(nacount)
+exclude <- c(ridrow)
+trainset <- trainset[,!(names(trainset) %in% exclude)]
+
+## Also need to remove rows that do no contribute to the analysis, namely timestamps, windows, and names
+trainset <- trainset[,-(1:7)]
+
+## Convert 'classe' to a factor for later analysis
+trainset$classe <- as.factor(trainset$classe)
+```
+
+Now we have our final set of features.
+```{r, echo=TRUE}
+## And now we have our final list of features for the predictor
+names(trainset)
+```
+
+## Training Model Developement
+
+The training data is then seperating into training and testing data so that we can validate the accuracy of our predictions. The 70% and 30% splits are chosen randomly.
+```{r, echo=TRUE}
+## We need to split training up so that we can test and train it before trying to predict the test set
+set.seed(12345)
+trainpart <- createDataPartition(trainset$classe, p=0.7)
+
+## 70% train
+traintr <- trainset[trainpart[[1]],]
+
+## 30% test
+trainte <- trainset[-trainpart[[1]],]
+```
+
+Then 5 different prediction methods are trained:
+-Forest
+-Adaptive Bagging
+-Boosted Logit
+-Rpart2
+-Boosted Tree
+
+The train control is set to method "cv" so that all methods are internally cross-validated.
+```{r, echo=TRUE}
+## We are asked to do cross validation and so must establish the controls for the training
+tctrl <- trainControl(method="cv", number=5, verboseIter=FALSE)
+
+## Then multiple models are produced to compare their results
+forest <- train(classe~., data = traintr, method = "rf", trControl = tctrl)
+ada <- train(classe~., data = traintr, method = "AdaBag", trControl = tctrl)
+lboost <- train(classe~., data = traintr, method = "LogitBoost", trControl = tctrl)
+part <- train(classe~., data = traintr, method = "rpart2", trControl = tctrl)
+btree <- train(classe~., data = traintr, method = "bstTree", trControl = tctrl)
+```
+
+We can compare the effectiveness of the various models by comparing their average accuracies across the validations.
+```{r, echo=TRUE}
+## Accuracies
+mean(forest$results$Accuracy)
+mean(ada$results$Accuracy)
+mean(lboost$results$Accuracy)
+mean(part$results$Accuracy)
+mean(btree$results$Accuracy)
+```
+
+The random forest was by far the most accurate prediction method, with boosted logit following behind and the remainder well below. We will use the random forest model for prediction.
+
+## Test Set Comparison
+
+The forest model is used to predict the test 30% that was segregated earlier and a confusion matrix is generated to see how accurately the model predicts the class of action.
+```{r, echo=TRUE}
+## Comparison to the test set put aside previously
+forpred <- predict(forest, trainte)
+confusionMatrix(forpred, trainte[, "classe"])
+```
+
+The overall accuracy is 99.24% with a p-value that is close to 0, confirming that the model is very proficient.
+```{r, echo=TRUE}
+## A look at the model
+forest$finalModel
+
+## Save the model for later
+save(forest, file="Model.RData")
+```
+
+From the final model table, the out of bound estimate of error is 0.73%, a very low error rate. 
+
+## Final Test Set Predictions
+```{r, echo=TRUE, eval=FALSE}
+## Applying to the test set
+testpred <- predict(forest, testset)
+testpred
+```
+
+Finally, the predictions for the test set are produced for evaluation in the quiz on Courera's Machine Learning website.
+
+## Conclusion
+The Random Forest model was an excellent predictor strategy with an accuracy around 99% when cross validated using the train control parameters as well as the predict function with the 30% test data set from the original training data. While there were a few misclassified predictions in the confusion matrix, they were very sparse and only 2 were misclassified beyond 1 letter classifier away.
